@@ -19,10 +19,7 @@ class AppTheme {
         backgroundColor: Color(0xFF08111F),
         elevation: 0,
       ),
-      cardTheme: const CardThemeData(
-        color: Color(0xFF12243A),
-        elevation: 0,
-      ),
+      cardTheme: const CardThemeData(color: Color(0xFF12243A), elevation: 0),
     );
   }
 
@@ -37,12 +34,8 @@ class AppTheme {
       brightness: Brightness.light,
       colorScheme: scheme,
       scaffoldBackgroundColor: const Color(0xFFF5F7FA),
-      appBarTheme: const AppBarTheme(
-        elevation: 0,
-      ),
-      cardTheme: const CardThemeData(
-        elevation: 0,
-      ),
+      appBarTheme: const AppBarTheme(elevation: 0),
+      cardTheme: const CardThemeData(elevation: 0),
     );
   }
 }

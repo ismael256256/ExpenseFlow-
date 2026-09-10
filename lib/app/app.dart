@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme/app_theme.dart';
+import '../features/dashboard/presentation/screens/dashboard_screen.dart';
 
 class ExpenseFlowApp extends StatefulWidget {
   const ExpenseFlowApp({super.key});
@@ -14,61 +14,78 @@ class _ExpenseFlowAppState extends State<ExpenseFlowApp> {
 
   void _toggleTheme() {
     setState(() {
-      _themeMode =
-          _themeMode == ThemeMode.dark
-              ? ThemeMode.light
-              : ThemeMode.dark;
+      _themeMode = _themeMode == ThemeMode.dark
+          ? ThemeMode.light
+          : ThemeMode.dark;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ExpenseFlow',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      title: 'ExpenseFlow',
       themeMode: _themeMode,
-      home: _HomeShell(
-        themeMode: _themeMode,
-        onToggleTheme: _toggleTheme,
+
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF123A66),
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        appBarTheme: const AppBarTheme(centerTitle: false),
       ),
+
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF123A66),
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF071018),
+        appBarTheme: const AppBarTheme(centerTitle: false),
+      ),
+
+      home: _HomeScreen(themeMode: _themeMode, onToggleTheme: _toggleTheme),
     );
   }
 }
 
-class _HomeShell extends StatelessWidget {
+class _HomeScreen extends StatelessWidget {
   final ThemeMode themeMode;
   final VoidCallback onToggleTheme;
 
-  const _HomeShell({
-    required this.themeMode,
-    required this.onToggleTheme,
-  });
+  const _HomeScreen({required this.themeMode, required this.onToggleTheme});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('ExpenseFlow'),
-        actions: [
-          IconButton(
-            tooltip: 'Switch theme',
-            onPressed: onToggleTheme,
-            icon: Icon(
-              themeMode == ThemeMode.dark
-                  ? Icons.light_mode_outlined
-                  : Icons.dark_mode_outlined,
+    return Stack(
+      children: [
+        const DashboardScreen(),
+
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 8,
+          right: 8,
+          child: Material(
+            color:
+                Theme.of(context).appBarTheme.backgroundColor ??
+                Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: BorderRadius.circular(24),
+            child: IconButton(
+              tooltip: 'Switch theme',
+              onPressed: onToggleTheme,
+              icon: Icon(
+                themeMode == ThemeMode.dark
+                    ? Icons.light_mode_outlined
+                    : Icons.dark_mode_outlined,
+              ),
             ),
           ),
-        ],
-      ),
-      body: const Center(
-        child: Text(
-          'Your finances, simplified.',
-          style: TextStyle(fontSize: 20),
         ),
-      ),
+      ],
     );
   }
 }
