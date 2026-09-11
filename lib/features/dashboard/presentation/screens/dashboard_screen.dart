@@ -149,7 +149,9 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   String get _smartSpendingInsight {
-    if (_transactionStore.transactions.isEmpty) {
+    final transactions = _transactionStore.transactions;
+
+    if (transactions.isEmpty) {
       return 'Add a few transactions to start receiving personalized spending insights.';
     }
 
@@ -161,10 +163,45 @@ class _HomeContentState extends State<_HomeContent> {
       return 'Keep recording your income and expenses to build a clearer picture of your finances.';
     }
 
-    final savingsRate = ((_totalIncome - _totalExpenses) / _totalIncome) * 100;
-
     if (_totalExpenses > _totalIncome) {
       return 'You are spending more than your recorded income. Consider reviewing your largest expense categories.';
+    }
+
+    final savingsRate = ((_totalIncome - _totalExpenses) / _totalIncome) * 100;
+
+    final expenses = transactions
+        .where((transaction) => transaction.type == TransactionType.expense)
+        .toList();
+
+    if (expenses.isNotEmpty && _totalExpenses > 0) {
+      final categoryTotals = <String, double>{};
+
+      for (final transaction in expenses) {
+        categoryTotals[transaction.categoryName] =
+            (categoryTotals[transaction.categoryName] ?? 0) +
+            transaction.amount;
+      }
+
+      final largestCategory = categoryTotals.entries.reduce(
+        (a, b) => a.value >= b.value ? a : b,
+      );
+
+      final largestCategoryShare =
+          (largestCategory.value / _totalExpenses) * 100;
+
+      if (largestCategoryShare >= 40) {
+        return '${largestCategory.key} accounts for ${largestCategoryShare.toStringAsFixed(0)}% of your recorded spending. Review this category first for possible savings.';
+      }
+
+      if (savingsRate < 10) {
+        return 'Your savings rate is ${savingsRate.toStringAsFixed(0)}%. Your largest spending category is ${largestCategory.key}. Consider setting a limit for it.';
+      }
+
+      if (savingsRate >= 30) {
+        return 'Great work. You are saving ${savingsRate.toStringAsFixed(0)}% of your recorded income. Keep an eye on ${largestCategory.key}, your largest spending category.';
+      }
+
+      return '${largestCategory.key} is your largest spending category at ${largestCategoryShare.toStringAsFixed(0)}% of expenses. Look for one small reduction there to improve your savings.';
     }
 
     if (savingsRate >= 30) {
