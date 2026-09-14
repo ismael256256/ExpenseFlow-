@@ -1,7 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
-import '../../../transactions/data/transaction_repository.dart';
+import '../../../transactions/application/transaction_store.dart';
 import '../../../transactions/domain/models/transaction.dart';
 
 class AnalysisScreen extends StatefulWidget {
@@ -12,7 +12,7 @@ class AnalysisScreen extends StatefulWidget {
 }
 
 class _AnalysisScreenState extends State<AnalysisScreen> {
-  final TransactionRepository _repository = TransactionRepository();
+  final TransactionStore _transactionStore = TransactionStore.instance;
 
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
 
@@ -22,11 +22,27 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   @override
   void initState() {
     super.initState();
+    _transactionStore.addListener(_onTransactionsChanged);
     _loadTransactions();
   }
 
+  @override
+  void dispose() {
+    _transactionStore.removeListener(_onTransactionsChanged);
+    super.dispose();
+  }
+
+  void _onTransactionsChanged() {
+    if (!mounted) return;
+
+    setState(() {
+      _transactions = _transactionStore.transactions;
+      _loading = false;
+    });
+  }
+
   Future<void> _loadTransactions() async {
-    final transactions = await _repository.getTransactions();
+    final transactions = _transactionStore.transactions;
 
     if (!mounted) return;
 
@@ -71,6 +87,60 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     }
 
     return result;
+  }
+
+  DateTime get _previousMonth =>
+      DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+
+  double _monthChange({
+    required String category,
+    required TransactionType type,
+  }) {
+    final currentTotal = _total(
+      _monthTransactions
+          .where(
+            (transaction) =>
+                transaction.type == type &&
+                (type == TransactionType.income ||
+                    transaction.categoryName == category),
+          )
+          .toList(),
+    );
+
+    final previousTransactions = _transactions.where(
+      (transaction) =>
+          transaction.date.year == _previousMonth.year &&
+          transaction.date.month == _previousMonth.month &&
+          transaction.type == type &&
+          (type == TransactionType.income ||
+              transaction.categoryName == category),
+    );
+
+    final previousTotal = _total(previousTransactions.toList());
+
+    if (previousTotal <= 0) return 0;
+
+    return ((currentTotal - previousTotal) / previousTotal) * 100;
+  }
+
+  String _changeText({required double change, required bool isExpense}) {
+    if (change == 0) {
+      return '0% vs last month';
+    }
+
+    final direction = change > 0 ? '↑' : '↓';
+    final percentage = change.abs().toStringAsFixed(1);
+
+    return '$direction $percentage% vs last month';
+  }
+
+  Color _changeColor({required double change, required bool isExpense}) {
+    if (change == 0) {
+      return Colors.grey;
+    }
+
+    final isPositive = isExpense ? change < 0 : change > 0;
+    return isPositive ? Colors.green : Colors.red;
   }
 
   void _changeMonth(int amount) {
@@ -193,6 +263,16 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   }
 
   Widget _buildSummary(double income, double expenses, double balance) {
+    final incomeChange = _monthChange(
+      category: '',
+      type: TransactionType.income,
+    );
+
+    final expenseChange = _monthChange(
+      category: '',
+      type: TransactionType.expense,
+    );
+
     return Row(
       children: [
         Expanded(
@@ -201,6 +281,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             income,
             Colors.green,
             Icons.arrow_downward,
+            change: incomeChange,
+            isExpense: false,
           ),
         ),
         const SizedBox(width: 10),
@@ -210,6 +292,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             expenses,
             Colors.red,
             Icons.arrow_upward,
+            change: expenseChange,
+            isExpense: true,
           ),
         ),
         const SizedBox(width: 10),
@@ -225,27 +309,84 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     );
   }
 
-  Widget _summaryCard(String title, double amount, Color color, IconData icon) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(height: 6),
-            Text(title, style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 4),
-            FittedBox(
-              child: Text(
-                'UGX ${_formatAmount(amount)}',
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
+  Widget _summaryCard(
+    String title,
+    double amount,
+    Color color,
+    IconData icon, {
+    double? change,
+    bool isExpense = false,
+  }) {
+    return SizedBox(
+      height: 190,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 32),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 24,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                height: 30,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'UGX ${_formatAmount(amount)}',
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 19,
+                    ),
+                  ),
+                ),
+              ),
+              if (change != null) ...[
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  height: 24,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _changeText(change: change, isExpense: isExpense),
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _changeColor(
+                          change: change,
+                          isExpense: isExpense,
+                        ),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -308,13 +449,38 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 final percentage = (entry.value / total) * 100;
                 final color = _categoryColor(entry.key, indexedEntry.key);
 
+                final change = _monthChange(
+                  category: entry.key,
+                  type: TransactionType.expense,
+                );
+
+                final previousTransactions = _transactions.where(
+                  (transaction) =>
+                      transaction.date.year == _previousMonth.year &&
+                      transaction.date.month == _previousMonth.month &&
+                      transaction.type == TransactionType.expense &&
+                      transaction.categoryName == entry.key,
+                );
+
+                final previousTotal = _total(previousTransactions.toList());
+
+                final changeLabel = previousTotal <= 0
+                    ? 'New this month'
+                    : _changeText(change: change, isExpense: true);
+
+                final changeColor = previousTotal <= 0
+                    ? Colors.blueGrey
+                    : _changeColor(change: change, isExpense: true);
+
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  padding: const EdgeInsets.symmetric(vertical: 7),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
                         width: 12,
                         height: 12,
+                        margin: const EdgeInsets.only(top: 4),
                         decoration: BoxDecoration(
                           color: color,
                           shape: BoxShape.circle,
@@ -322,19 +488,41 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          entry.key,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              entry.key,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              changeLabel,
+                              style: TextStyle(
+                                color: changeColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Text('UGX ${_formatAmount(entry.value)}'),
                       const SizedBox(width: 8),
-                      SizedBox(
-                        width: 48,
-                        child: Text(
-                          '${percentage.toStringAsFixed(0)}%',
-                          textAlign: TextAlign.end,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('UGX ${_formatAmount(entry.value)}'),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${percentage.toStringAsFixed(0)}%',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

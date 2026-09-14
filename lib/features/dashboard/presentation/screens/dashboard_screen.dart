@@ -34,6 +34,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             context,
             MaterialPageRoute(builder: (_) => const AddTransactionScreen()),
           );
+          await TransactionStore.instance.refresh();
           if (mounted) {
             setState(() {});
           }
@@ -56,6 +57,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     builder: (_) => const AddTransactionScreen(),
                   ),
                 );
+                await TransactionStore.instance.refresh();
                 if (mounted) {
                   setState(() {});
                 }
@@ -148,6 +150,94 @@ class _HomeContentState extends State<_HomeContent> {
     return ((income - expenses) / income) * 100;
   }
 
+  double get _previousMonthIncome {
+    final now = DateTime.now();
+    final previousMonth = DateTime(now.year, now.month - 1);
+
+    return _transactionStore.transactions
+        .where(
+          (transaction) =>
+              transaction.type == TransactionType.income &&
+              transaction.date.year == previousMonth.year &&
+              transaction.date.month == previousMonth.month,
+        )
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  }
+
+  double get _currentMonthIncome {
+    final now = DateTime.now();
+
+    return _transactionStore.transactions
+        .where(
+          (transaction) =>
+              transaction.type == TransactionType.income &&
+              transaction.date.year == now.year &&
+              transaction.date.month == now.month,
+        )
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  }
+
+  double get _monthlyIncomeChange {
+    if (_previousMonthIncome <= 0) return 0;
+
+    return ((_currentMonthIncome - _previousMonthIncome) /
+            _previousMonthIncome) *
+        100;
+  }
+
+  String _summaryChangeText(double change) {
+    if (change == 0) {
+      return 'No change vs last month';
+    }
+
+    final direction = change > 0 ? '↑' : '↓';
+    return '$direction ${change.abs().round()}% vs last month';
+  }
+
+  Color _summaryChangeColor({required double change, required bool isExpense}) {
+    if (change == 0) {
+      return Colors.grey;
+    }
+
+    final favorable = isExpense ? change < 0 : change > 0;
+    return favorable ? Colors.green : Colors.red;
+  }
+
+  double get _previousMonthExpenses {
+    final now = DateTime.now();
+    final previousMonth = DateTime(now.year, now.month - 1);
+
+    return _transactionStore.transactions
+        .where(
+          (transaction) =>
+              transaction.type == TransactionType.expense &&
+              transaction.date.year == previousMonth.year &&
+              transaction.date.month == previousMonth.month,
+        )
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  }
+
+  double get _currentMonthExpenses {
+    final now = DateTime.now();
+
+    return _transactionStore.transactions
+        .where(
+          (transaction) =>
+              transaction.type == TransactionType.expense &&
+              transaction.date.year == now.year &&
+              transaction.date.month == now.month,
+        )
+        .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+  }
+
+  double get _monthlySpendingChange {
+    if (_previousMonthExpenses <= 0) return 0;
+
+    return ((_currentMonthExpenses - _previousMonthExpenses) /
+            _previousMonthExpenses) *
+        100;
+  }
+
   String get _smartSpendingInsight {
     final transactions = _transactionStore.transactions;
 
@@ -167,6 +257,76 @@ class _HomeContentState extends State<_HomeContent> {
       return 'You are spending more than your recorded income. Consider reviewing your largest expense categories.';
     }
 
+    final now = DateTime.now();
+    final previousMonth = DateTime(now.year, now.month - 1);
+
+    final currentCategoryTotals = <String, double>{};
+    final previousCategoryTotals = <String, double>{};
+
+    for (final transaction in transactions) {
+      if (transaction.type != TransactionType.expense) continue;
+
+      final category = transaction.categoryName.isEmpty
+          ? 'Other'
+          : transaction.categoryName;
+
+      if (transaction.date.year == now.year &&
+          transaction.date.month == now.month) {
+        currentCategoryTotals[category] =
+            (currentCategoryTotals[category] ?? 0) + transaction.amount;
+      }
+
+      if (transaction.date.year == previousMonth.year &&
+          transaction.date.month == previousMonth.month) {
+        previousCategoryTotals[category] =
+            (previousCategoryTotals[category] ?? 0) + transaction.amount;
+      }
+    }
+
+    String? risingCategory;
+    double risingCategoryChange = 0;
+
+    for (final entry in currentCategoryTotals.entries) {
+      final currentAmount = entry.value;
+      final previousAmount = previousCategoryTotals[entry.key] ?? 0;
+
+      if (currentAmount <= 0) continue;
+
+      if (previousAmount > 0) {
+        final change =
+            ((currentAmount - previousAmount) / previousAmount) * 100;
+
+        if (change >= 10 && change > risingCategoryChange) {
+          risingCategory = entry.key;
+          risingCategoryChange = change;
+        }
+      }
+    }
+
+    final overallChange = _monthlySpendingChange;
+
+    // Category-specific intelligence takes priority over the
+    // generic overall monthly trend message.
+    if (risingCategory != null && _previousMonthExpenses > 0) {
+      if (overallChange <= -10) {
+        return 'Your overall spending is down ${overallChange.abs().round()}% compared with last month, but $risingCategory spending is up ${risingCategoryChange.round()}%. Consider reviewing this category.';
+      }
+
+      if (overallChange >= 10) {
+        return 'Your overall spending is up ${overallChange.round()}% compared with last month, and $risingCategory spending is up ${risingCategoryChange.round()}%. Review this category first.';
+      }
+
+      return '$risingCategory spending is up ${risingCategoryChange.round()}% compared with last month. Consider reviewing this category.';
+    }
+
+    if (_previousMonthExpenses > 0 && overallChange >= 10) {
+      return 'Your spending is up ${overallChange.round()}% compared with last month. Review your recent expenses, especially your largest spending category.';
+    }
+
+    if (_previousMonthExpenses > 0 && overallChange <= -10) {
+      return 'Good progress. Your spending is down ${overallChange.abs().round()}% compared with last month. Keep the momentum going.';
+    }
+
     final savingsRate = ((_totalIncome - _totalExpenses) / _totalIncome) * 100;
 
     final expenses = transactions
@@ -177,9 +337,12 @@ class _HomeContentState extends State<_HomeContent> {
       final categoryTotals = <String, double>{};
 
       for (final transaction in expenses) {
-        categoryTotals[transaction.categoryName] =
-            (categoryTotals[transaction.categoryName] ?? 0) +
-            transaction.amount;
+        final category = transaction.categoryName.isEmpty
+            ? 'Other'
+            : transaction.categoryName;
+
+        categoryTotals[category] =
+            (categoryTotals[category] ?? 0) + transaction.amount;
       }
 
       final largestCategory = categoryTotals.entries.reduce(
@@ -425,6 +588,15 @@ class _HomeContentState extends State<_HomeContent> {
                         amount: 'UGX ${_formatAmount(_totalIncome)}',
                         icon: Icons.arrow_downward,
                         color: Colors.green,
+                        changeText: _previousMonthIncome > 0
+                            ? _summaryChangeText(_monthlyIncomeChange)
+                            : null,
+                        changeColor: _previousMonthIncome > 0
+                            ? _summaryChangeColor(
+                                change: _monthlyIncomeChange,
+                                isExpense: false,
+                              )
+                            : null,
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -434,6 +606,15 @@ class _HomeContentState extends State<_HomeContent> {
                         amount: 'UGX ${_formatAmount(_totalExpenses)}',
                         icon: Icons.arrow_upward,
                         color: Colors.red,
+                        changeText: _previousMonthExpenses > 0
+                            ? _summaryChangeText(_monthlySpendingChange)
+                            : null,
+                        changeColor: _previousMonthExpenses > 0
+                            ? _summaryChangeColor(
+                                change: _monthlySpendingChange,
+                                isExpense: true,
+                              )
+                            : null,
                       ),
                     ),
                   ],
@@ -611,37 +792,97 @@ class _SummaryCard extends StatelessWidget {
   final String amount;
   final IconData icon;
   final Color color;
+  final String? changeText;
+  final Color? changeColor;
 
   const _SummaryCard({
     required this.title,
     required this.amount,
     required this.icon,
     required this.color,
+    this.changeText,
+    this.changeColor,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 190,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         color: Theme.of(context).cardColor,
+        boxShadow: Theme.of(context).brightness == Brightness.light
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, color: color),
-          const SizedBox(height: 12),
-          Text(title),
-          const SizedBox(height: 5),
-          Text(
-            amount,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: color,
+          Icon(icon, color: color, size: 34),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 25,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                title,
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            height: 30,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                amount,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+          if (changeText != null) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              height: 24,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  changeText!,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: changeColor ?? Colors.grey,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

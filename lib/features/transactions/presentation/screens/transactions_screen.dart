@@ -94,10 +94,23 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     await _loadTransactions();
   }
 
-  String _formatDate(DateTime date) {
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    return '$day/$month/${date.year}';
+  String _formatDateHeader(DateTime date) {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   String _formatAmount(double amount) {
@@ -116,77 +129,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           ? _buildEmptyState()
           : RefreshIndicator(
               onRefresh: _loadTransactions,
-              child: ListView.builder(
+              child: ListView(
                 padding: const EdgeInsets.all(16),
-                itemCount: _transactions.length,
-                itemBuilder: (context, index) {
-                  final transaction = _transactions[index];
-
-                  final isIncome = transaction.type == TransactionType.income;
-
-                  final color = isIncome ? Colors.green : Colors.red;
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      leading: CircleAvatar(
-                        backgroundColor: color.withValues(alpha: 0.12),
-                        child: Icon(
-                          isIncome ? Icons.arrow_downward : Icons.arrow_upward,
-                          color: color,
-                        ),
-                      ),
-                      title: Text(
-                        transaction.categoryName,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        '${transaction.description}\n${_formatDate(transaction.date)}',
-                      ),
-                      isThreeLine: true,
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '${isIncome ? '+' : '-'}UGX ${_formatAmount(transaction.amount)}',
-                            style: TextStyle(
-                              color: color,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              InkWell(
-                                onTap: () => _editTransaction(transaction),
-                                child: Icon(
-                                  Icons.edit_outlined,
-                                  size: 19,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              InkWell(
-                                onTap: () => _deleteTransaction(transaction),
-                                child: Icon(
-                                  Icons.delete_outline,
-                                  size: 19,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+                children: _buildGroupedTransactions(),
               ),
             ),
       floatingActionButton: FloatingActionButton.extended(
@@ -203,6 +148,166 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         label: const Text('Add Transaction'),
       ),
     );
+  }
+
+  IconData _categoryIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'food':
+      case 'food & dining':
+      case 'dining':
+        return Icons.restaurant_outlined;
+      case 'transport':
+      case 'transportation':
+        return Icons.directions_car_outlined;
+      case 'shopping':
+        return Icons.shopping_bag_outlined;
+      case 'bills':
+      case 'utilities':
+        return Icons.receipt_long_outlined;
+      case 'entertainment':
+        return Icons.movie_outlined;
+      case 'health':
+      case 'healthcare':
+        return Icons.local_hospital_outlined;
+      case 'education':
+        return Icons.school_outlined;
+      case 'salary':
+      case 'income':
+        return Icons.account_balance_wallet_outlined;
+      case 'rent':
+      case 'housing':
+        return Icons.home_outlined;
+      default:
+        return Icons.category_outlined;
+    }
+  }
+
+  List<Widget> _buildGroupedTransactions() {
+    final sortedTransactions = List<ExpenseTransaction>.from(_transactions)
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    final grouped = <String, List<ExpenseTransaction>>{};
+
+    for (final transaction in sortedTransactions) {
+      final key =
+          '${transaction.date.year}-${transaction.date.month}-${transaction.date.day}';
+
+      grouped.putIfAbsent(key, () => []).add(transaction);
+    }
+
+    final widgets = <Widget>[];
+
+    for (final entry in grouped.entries) {
+      final transactionsForDay = entry.value;
+      final date = transactionsForDay.first.date;
+
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 12),
+          child: Row(
+            children: [
+              Text(
+                _formatDateHeader(date),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Divider(
+                  thickness: 1.5,
+                  color: Theme.of(context).colorScheme.primary
+                      .withValues(alpha: 0.4),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      for (final transaction in transactionsForDay) {
+        final isIncome = transaction.type == TransactionType.income;
+        final color = isIncome ? Colors.green : Colors.red;
+
+        widgets.add(
+          Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 6,
+              ),
+              leading: CircleAvatar(
+                backgroundColor: color.withValues(alpha: 0.12),
+                child: Icon(
+                  isIncome ? Icons.arrow_downward : Icons.arrow_upward,
+                  color: color,
+                ),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    _categoryIcon(transaction.categoryName),
+                    size: 21,
+                    color: color,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      transaction.categoryName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${isIncome ? '+' : '-'}UGX ${_formatAmount(transaction.amount)}',
+                    style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        onTap: () => _editTransaction(transaction),
+                        child: Icon(
+                          Icons.edit_outlined,
+                          size: 19,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      InkWell(
+                        onTap: () => _deleteTransaction(transaction),
+                        child: Icon(
+                          Icons.delete_outline,
+                          size: 19,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return widgets;
   }
 
   Widget _buildEmptyState() {
